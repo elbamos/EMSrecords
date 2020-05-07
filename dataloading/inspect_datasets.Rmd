@@ -1,0 +1,92 @@
+---
+title: "Inspect Datasets"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup,echo=F}
+library(readr)
+library(dplyr)
+library(magrittr)
+library(stringr)
+library(lubridate)
+library(purrr)
+
+data_dir <- "~/Dropbox/EMSrecords/raw_data/"
+```
+
+## Detroit
+
+```{r detroit}
+detroit <- read_csv(paste0(data_dir, "detroit.csv")) %>%
+  select(-incident_id, -agency, -incident_address, -precinct_sca, 
+         -respondingunit, -officerinitiated, -intaketime, -dispatchtime, -traveltime, 
+         -totalresponsetime, -time_on_scene, -totaltime, -block_id, -council_district, -oid)
+detroit %>% glimpse()
+```
+
+These are the categories we need to filter:
+
+```{r detroit_categories}
+unique(detroit$category) %>% sort()
+```
+
+For our purposes, I will consider only those that are obviously possible COVID - this should be reconsidered at a later date. 
+
+```{r detroit_bad_cats_list}
+# These categories will be excluded 
+detroit_keep <- unique(detroit$category) %>% keep(~ case_when(
+  str_detect(.x, c("SICK|CHEST|BRETH|CRDAC|UNCON")) ~ TRUE, 
+  TRUE ~ FALSE
+)) %>% sort()
+print(detroit_keep)
+```
+
+
+Our final dataset for Detroit: 
+
+```{r detroit_final}
+detroit_final <- detroit %>% 
+  filter(category %in% detroit_keep) %>%
+  mutate(
+    date = ymd_hms(call_timestamp)
+  ) %>%
+  select(-call_timestamp, -priority, -callcode, -calldescription)
+
+print(paste0("Detroit has ", nrow(detroit_final), " calls from ", min(detroit_final$date), " to ", max(detroit_final$date)))
+```
+
+## Los Angeles
+
+
+```{r la}
+la <- read_csv("~/Dropbox/EMSrecords/raw_data/los_angeles_counts.csv") %>%
+  set_colnames(c("date", "fd_number", "lat", "lon", "count"))
+```
+
+We have no indication of call category or type.  
+
+```{r la_summary}
+print(paste0("Los Angeles has ", sum(la$count), " calls from ", min(la$date), " to ", max(la$date)))
+```
+
+## Portland 
+
+```{r portland}
+
+load_a_portland <- function(x) read_csv(x) %>% 
+    select(ReportMonthYear, category=FinalCallCategory,FinalCallGroup,Neighborhood,lat=OpenDataLat,lon=OpenDataLon)
+
+ portland <- dir(paste0(data_dir, "portland/"), pattern="*.csv") %>%
+   map(~ load_a_portland(paste0(data_dir, "portland/", .x))) %>%
+   bind_rows() %>%
+   glimpse()
+```
+
+```{r portland_cats}
+table(portland$category, portland$FinalCallGroup)
+```
+
+The only categories that appear potentially consistent with COVID are "Other", and "Follow-Up", neither of which appears promising.
+
